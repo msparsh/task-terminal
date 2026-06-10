@@ -1,10 +1,18 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, nativeImage } = require('electron');
 const path = require('path');
 
 function createWindow() {
+  const blankIcon = nativeImage.createEmpty();
   const win = new BrowserWindow({
     width: 1000,
     height: 700,
+    frame: true,
+    autoHideMenuBar: true,
+    title: 'Terminal',          // 2️⃣ Clears the title text! 
+    icon: blankIcon,
+
+    titleBarStyle: 'hidden',      // 🙈 Hides the native title bar, icon, and text!
+    titleBarOverlay: true,
     backgroundColor: '#0a0e17',
     webPreferences: {
       nodeIntegration: false,

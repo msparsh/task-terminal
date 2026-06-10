@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>terminal</title>
+  <title></title>
   <style>
     * {
       margin: 0;
@@ -113,10 +113,22 @@
     .board-header {
       text-decoration: underline;
     }
+
+    .drag-bar {
+      -webkit-app-region: drag;
+
+      height: 32px;
+      width: 100%;
+
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
   </style>
 </head>
 
 <body>
+  <header class="drag-bar"></header>
   <div id="terminal">
     <div id="output"></div>
     <div class="input-line">
