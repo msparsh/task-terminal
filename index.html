@@ -143,23 +143,27 @@
     // --------------------------------------------------------------
     class Core {
       constructor() {
-        this.STORAGE_KEY = 'taskbook_data';
-        this.ARCHIVE_KEY = 'taskbook_archive';
+        // 🗑️ Removed the old localStorage keys!
         this._load();
       }
 
       _load() {
-        const stored = localStorage.getItem(this.STORAGE_KEY);
-        this.items = stored ? JSON.parse(stored) : {};
-        const archived = localStorage.getItem(this.ARCHIVE_KEY);
-        this.archive = archived ? JSON.parse(archived) : {};
+        // 📥 Load synchronously from the file system
+        const data = window.api.loadDataSync();
+        
+        this.items = data.items || {};
+        this.archive = data.archive || {};
+        
         if (Object.keys(this.items).length === 0) this._nextId = 1;
         else this._nextId = Math.max(...Object.keys(this.items).map(Number), 0) + 1;
       }
 
       _save() {
-        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.items));
-        localStorage.setItem(this.ARCHIVE_KEY, JSON.stringify(this.archive));
+        // 📤 Save everything to our JSON file at once!
+        window.api.saveDataSync({
+          items: this.items,
+          archive: this.archive
+        });
       }
 
       _generateId() {

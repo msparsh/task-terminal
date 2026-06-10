@@ -1,15 +1,14 @@
 {
-  "name": "taskbook-desktop",
-  "version": "1.0.0",
+  "name": "task-terminal",
+  "version": "1.0.1",
   "description": "A dedicated pseudo-terminal for Taskbook",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
-  },
-  "dependencies": {
-    "ansi-to-html": "^0.7.2"
+    "start": "electron .",
+    "build": "electron-builder"
   },
   "devDependencies": {
-    "electron": "^28.3.3"
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
   }
 }
