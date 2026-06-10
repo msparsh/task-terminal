@@ -58,7 +58,7 @@
     #cmd-input {
       background: transparent;
       border: none;
-      color: #f0f0f0;
+      color: #ffffff;
       font-family: inherit;
       font-size: 14px;
       flex: 1;
@@ -68,7 +68,7 @@
 
     /* no emojis, plain text – keep everything ascii/plain */
     .response-text {
-      color: #bbbbbb;
+      color: #dadada;
       margin: 4px 0 8px 0;
       white-space: pre-wrap;
     }
@@ -91,23 +91,23 @@
 
     /* taskbook syntax highlighting */
     .c-purple {
-      color: #b48ead;
+      color: #c678dd;
     }
 
     .c-green {
-      color: #a3be8c;
+      color: #98c379;
     }
 
     .c-blue {
-      color: #81a1c1;
+      color: #61afef;
     }
 
     .c-yellow {
-      color: #ebcb8b;
+      color: #e5c07b;
     }
 
     .c-dim {
-      color: #4c566a;
+      color: #5c6370;
     }
 
     .board-header {
@@ -443,7 +443,7 @@
         let prefix = '';
         let desc = item.description;
 
-        // Status mapping and dimming
+        // Status mapping and dimming 🚥
         if (item._isTask) {
           if (item.isComplete) {
             prefix = '<span class="c-green">✓</span>';
@@ -459,14 +459,20 @@
         }
 
         let prio = '';
-        if (item._isTask && !item.isComplete && item.priority === 3) prio = ' <span class="c-yellow">(!)</span>';
-        else if (item._isTask && !item.isComplete && item.priority === 2) prio = ' <span class="c-yellow">(!)</span>';
+        // Add yellow underline to the description for Priority 3 🚨
+        if (item._isTask && !item.isComplete && item.priority === 3) {
+          desc = `<span class="c-yellow" style="text-decoration: underline">${desc}</span>`;
+          prio = ' <span class="c-yellow">(!)</span>';
+        }
+        else if (item._isTask && !item.isComplete && item.priority === 2) {
+          prio = ' <span class="c-yellow">(!)</span>';
+        }
 
         let boardsStr = item.boards.filter(b => b !== 'inbox').map(b => ` <span class="c-dim">[${b}]</span>`).join('');
         let age = this._getAge(item._timestamp);
         let ageStr = age ? ` <span class="c-dim">${age}d</span>` : '';
 
-        // Match the visual order: ID. Checkbox Description Age Star
+        // Match the visual order: ID. Checkbox Description Age Star ⭐
         return `  <span class="c-dim">${item.id}.</span> ${prefix} ${desc}${prio}${boardsStr}${ageStr} ${star}`.trimEnd();
       }
 
