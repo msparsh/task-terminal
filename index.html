@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="UTF-8">
-  <title>taskbook – terminal</title>
+  <title>terminal</title>
   <style>
     * {
       margin: 0;
@@ -82,424 +83,473 @@
       width: 8px;
       background: #111;
     }
+
     ::-webkit-scrollbar-thumb {
       background: #333;
     }
+
+
+    /* taskbook syntax highlighting */
+    .c-purple {
+      color: #b48ead;
+    }
+
+    .c-green {
+      color: #a3be8c;
+    }
+
+    .c-blue {
+      color: #81a1c1;
+    }
+
+    .c-yellow {
+      color: #ebcb8b;
+    }
+
+    .c-dim {
+      color: #4c566a;
+    }
+
+    .board-header {
+      text-decoration: underline;
+    }
   </style>
 </head>
+
 <body>
-<div id="terminal">
-  <div id="output"></div>
-  <div class="input-line">
-    <span class="prompt">$</span>
-    <input type="text" id="cmd-input" spellcheck="false" autofocus autocomplete="off">
+  <div id="terminal">
+    <div id="output"></div>
+    <div class="input-line">
+      <span class="prompt">$</span>
+      <input type="text" id="cmd-input" spellcheck="false" autofocus autocomplete="off">
+    </div>
   </div>
-</div>
 
-<script>
-  // --------------------------------------------------------------
-  // TASKBOOK ENGINE – plain storage, no emoji, no extra styling
-  // --------------------------------------------------------------
-  class TaskbookCore {
-    constructor() {
-      this.STORAGE_KEY = 'taskbook_data';
-      this.ARCHIVE_KEY = 'taskbook_archive';
-      this._load();
-    }
-
-    _load() {
-      const stored = localStorage.getItem(this.STORAGE_KEY);
-      this.items = stored ? JSON.parse(stored) : {};
-      const archived = localStorage.getItem(this.ARCHIVE_KEY);
-      this.archive = archived ? JSON.parse(archived) : {};
-      if (Object.keys(this.items).length === 0) this._nextId = 1;
-      else this._nextId = Math.max(...Object.keys(this.items).map(Number), 0) + 1;
-    }
-
-    _save() {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.items));
-      localStorage.setItem(this.ARCHIVE_KEY, JSON.stringify(this.archive));
-    }
-
-    _generateId() {
-      return this._nextId++;
-    }
-
-    _nowMeta() {
-      const now = new Date();
-      return { timestamp: now.getTime(), dateString: now.toDateString() };
-    }
-
-    _parseOptions(args) {
-      let boards = [];
-      let priority = 1;
-      let clean = [];
-      for (let t of args) {
-        if (t.startsWith('@') && t.length > 1) boards.push(t);
-        else if (/^p:[123]$/i.test(t)) priority = parseInt(t[2], 10);
-        else clean.push(t);
+  <script>
+    // --------------------------------------------------------------
+    // TASKBOOK ENGINE – plain storage, no emoji, no extra styling
+    // --------------------------------------------------------------
+    class Core {
+      constructor() {
+        this.STORAGE_KEY = 'taskbook_data';
+        this.ARCHIVE_KEY = 'taskbook_archive';
+        this._load();
       }
-      if (boards.length === 0) boards.push('My Board');
-      return { boards, priority, description: clean.join(' ').trim() };
-    }
 
-    createTask(args) {
-      if (!args.length) return { error: true, msg: 'Error: task description required' };
-      const { boards, priority, description } = this._parseOptions(args);
-      if (!description) return { error: true, msg: 'Error: empty description' };
-      const id = this._generateId();
-      const { timestamp, dateString } = this._nowMeta();
-      this.items[id] = {
-        id, description, boards, priority, isStarred: false,
-        isComplete: false, inProgress: false, _isTask: true,
-        _date: dateString, _timestamp: timestamp
-      };
-      this._save();
-      return { success: true, msg: `Created task [${id}]: ${description}` };
-    }
-
-    createNote(args) {
-      if (!args.length) return { error: true, msg: 'Error: note description required' };
-      const { boards, description } = this._parseOptions(args);
-      if (!description) return { error: true, msg: 'Error: empty description' };
-      const id = this._generateId();
-      const { timestamp, dateString } = this._nowMeta();
-      this.items[id] = {
-        id, description, boards, isStarred: false, _isTask: false,
-        _date: dateString, _timestamp: timestamp
-      };
-      this._save();
-      return { success: true, msg: `Created note [${id}]: ${description}` };
-    }
-
-    _validateIds(ids, source = 'items') {
-      const pool = source === 'items' ? this.items : this.archive;
-      let valid = [];
-      for (let raw of ids) {
-        let num = Number(raw);
-        if (isNaN(num) || !pool[num]) return { error: true, msg: `Invalid ID: ${raw} not found` };
-        valid.push(num);
+      _load() {
+        const stored = localStorage.getItem(this.STORAGE_KEY);
+        this.items = stored ? JSON.parse(stored) : {};
+        const archived = localStorage.getItem(this.ARCHIVE_KEY);
+        this.archive = archived ? JSON.parse(archived) : {};
+        if (Object.keys(this.items).length === 0) this._nextId = 1;
+        else this._nextId = Math.max(...Object.keys(this.items).map(Number), 0) + 1;
       }
-      return { valid };
-    }
 
-    checkTasks(idsRaw) {
-      let ids = idsRaw.map(String);
-      let v = this._validateIds(ids);
-      if (v.error) return v;
-      let checked = [], unchecked = [];
-      for (let id of v.valid) {
-        let it = this.items[id];
-        if (!it._isTask) return { error: true, msg: `Item ${id} is a note, cannot check/uncheck` };
-        it.isComplete = !it.isComplete;
-        if (it.isComplete) it.inProgress = false;
-        (it.isComplete ? checked : unchecked).push(id);
+      _save() {
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.items));
+        localStorage.setItem(this.ARCHIVE_KEY, JSON.stringify(this.archive));
       }
-      this._save();
-      let msg = '';
-      if (checked.length) msg += `Checked (complete): ${checked.join(', ')}. `;
-      if (unchecked.length) msg += `Unchecked (pending): ${unchecked.join(', ')}.`;
-      return { success: true, msg: msg || 'No tasks updated' };
-    }
 
-    beginTasks(idsRaw) {
-      let ids = idsRaw.map(String);
-      let v = this._validateIds(ids);
-      if (v.error) return v;
-      let started = [], paused = [];
-      for (let id of v.valid) {
-        let it = this.items[id];
-        if (!it._isTask) return { error: true, msg: `Item ${id} is a note, cannot start/pause` };
-        if (it.isComplete) return { error: true, msg: `Task ${id} is completed, cannot start` };
-        it.inProgress = !it.inProgress;
-        (it.inProgress ? started : paused).push(id);
+      _generateId() {
+        return this._nextId++;
       }
-      this._save();
-      let msg = '';
-      if (started.length) msg += `Started: ${started.join(', ')}. `;
-      if (paused.length) msg += `Paused: ${paused.join(', ')}.`;
-      return { success: true, msg };
-    }
 
-    starItems(idsRaw) {
-      let ids = idsRaw.map(String);
-      let v = this._validateIds(ids);
-      if (v.error) return v;
-      let starred = [], unstarred = [];
-      for (let id of v.valid) {
-        this.items[id].isStarred = !this.items[id].isStarred;
-        (this.items[id].isStarred ? starred : unstarred).push(id);
+      _nowMeta() {
+        const now = new Date();
+        return { timestamp: now.getTime(), dateString: now.toDateString() };
       }
-      this._save();
-      let msg = '';
-      if (starred.length) msg += `Starred: ${starred.join(', ')}. `;
-      if (unstarred.length) msg += `Unstarred: ${unstarred.join(', ')}.`;
-      return { success: true, msg };
-    }
 
-    deleteItems(idsRaw) {
-      let ids = idsRaw.map(String);
-      let v = this._validateIds(ids);
-      if (v.error) return v;
-      let moved = [];
-      for (let id of v.valid) {
-        let item = this.items[id];
-        let archiveId = this._nextArchiveId();
-        this.archive[archiveId] = JSON.parse(JSON.stringify(item));
-        delete this.items[id];
-        moved.push(id);
-      }
-      this._save();
-      return { success: true, msg: `Deleted and archived: ${moved.join(', ')}` };
-    }
-
-    _nextArchiveId() {
-      let ids = Object.keys(this.archive).map(Number);
-      let max = ids.length ? Math.max(...ids) : 0;
-      return max + 1;
-    }
-
-    restoreItems(idsRaw) {
-      let ids = idsRaw.map(String);
-      let v = this._validateIds(ids, 'archive');
-      if (v.error) return v;
-      let restored = [];
-      for (let oldId of v.valid) {
-        let archived = this.archive[oldId];
-        if (!archived) continue;
-        let newId = this._generateId();
-        let newItem = { ...archived, id: newId };
-        this.items[newId] = newItem;
-        delete this.archive[oldId];
-        restored.push(`${oldId} -> new ID ${newId}`);
-      }
-      this._save();
-      return { success: true, msg: `Restored: ${restored.join(', ')}` };
-    }
-
-    editItem(idRaw, newDesc) {
-      let id = Number(idRaw);
-      if (!this.items[id]) return { error: true, msg: `ID ${id} not found` };
-      if (!newDesc || !newDesc.trim()) return { error: true, msg: 'Description required' };
-      this.items[id].description = newDesc.trim();
-      this._save();
-      return { success: true, msg: `Updated item ${id}: "${newDesc.trim()}"` };
-    }
-
-    moveBoards(idRaw, targetBoards) {
-      let id = Number(idRaw);
-      if (!this.items[id]) return { error: true, msg: `ID ${id} not found` };
-      let boards = [];
-      for (let b of targetBoards) {
-        if (b.toLowerCase() === 'myboard') boards.push('My Board');
-        else if (b.startsWith('@')) boards.push(b);
-        else boards.push('@'+b);
-      }
-      if (!boards.length) boards.push('My Board');
-      this.items[id].boards = [...new Set(boards)];
-      this._save();
-      return { success: true, msg: `Moved item ${id} to boards: ${boards.join(', ')}` };
-    }
-
-    updatePriority(idRaw, levelRaw) {
-      let id = Number(idRaw);
-      let level = Number(levelRaw);
-      if (!this.items[id]) return { error: true, msg: `ID ${id} not found` };
-      if (![1,2,3].includes(level)) return { error: true, msg: 'Priority must be 1,2,3' };
-      if (!this.items[id]._isTask) return { error: true, msg: 'Only tasks have priority' };
-      this.items[id].priority = level;
-      this._save();
-      let prio = level === 3 ? 'HIGH' : (level === 2 ? 'MEDIUM' : 'NORMAL');
-      return { success: true, msg: `Priority of task ${id} set to ${prio}` };
-    }
-
-    clearCompleted() {
-      let toDelete = [];
-      for (let [id, it] of Object.entries(this.items)) {
-        if (it._isTask && it.isComplete) toDelete.push(Number(id));
-      }
-      if (!toDelete.length) return { success: true, msg: 'No completed tasks to clear' };
-      return this.deleteItems(toDelete);
-    }
-
-    copyToClipboard(idsRaw, copyFn) {
-      let ids = idsRaw.map(String);
-      let v = this._validateIds(ids);
-      if (v.error) return v;
-      let descriptions = v.valid.map(id => this.items[id].description).join('\n');
-      copyFn(descriptions);
-      return { success: true, msg: `Copied ${ids.length} item(s) description` };
-    }
-
-    // board view – plain ascii
-    getBoardView() {
-      let groups = this._groupByBoard();
-      let lines = [];
-      let stats = this._computeStats();
-      for (let [board, items] of Object.entries(groups)) {
-        if (items.length === 0) continue;
-        let taskCount = items.filter(i => i._isTask).length;
-        let completeCount = items.filter(i => i._isTask && i.isComplete).length;
-        lines.push(`\n[${board}]  (${completeCount}/${taskCount} tasks)`);
-        for (let it of items) {
-          lines.push(this._formatItemLine(it));
+      _parseOptions(args) {
+        let boards = [];
+        let priority = 1;
+        let clean = [];
+        for (let t of args) {
+          if (t.startsWith('@') && t.length > 1) boards.push(t);
+          else if (/^p:[123]$/i.test(t)) priority = parseInt(t[2], 10);
+          else clean.push(t);
         }
+        if (boards.length === 0) boards.push('inbox');
+        return { boards, priority, description: clean.join(' ').trim() };
       }
-      lines.push(`\n[STATS] done:${stats.complete} in-progress:${stats.inProgress} pending:${stats.pending} notes:${stats.notes}  (${stats.percent}% complete)`);
-      return lines.join('\n');
-    }
 
-    getTimelineView() {
-      let groups = this._groupByDate();
-      let lines = ['TIMELINE (by creation date)'];
-      for (let [date, items] of Object.entries(groups).sort((a,b)=> new Date(a[0]) - new Date(b[0]))) {
-        lines.push(`\n${date}`);
-        for (let it of items) lines.push(this._formatItemLine(it));
+      createTask(args) {
+        if (!args.length) return { error: true, msg: 'Error: task description required' };
+        const { boards, priority, description } = this._parseOptions(args);
+        if (!description) return { error: true, msg: 'Error: empty description' };
+        const id = this._generateId();
+        const { timestamp, dateString } = this._nowMeta();
+        this.items[id] = {
+          id, description, boards, priority, isStarred: false,
+          isComplete: false, inProgress: false, _isTask: true,
+          _date: dateString, _timestamp: timestamp
+        };
+        this._save();
+        return { success: true, msg: `Created task [${id}]: ${description}` };
       }
-      return lines.join('\n');
-    }
 
-    getArchiveView() {
-      if (Object.keys(this.archive).length === 0) return 'Archive is empty.';
-      let lines = ['ARCHIVED ITEMS'];
-      for (let [id, item] of Object.entries(this.archive)) {
-        let type = item._isTask ? (item.isComplete ? '[done]' : '[task]') : '[note]';
-        lines.push(` ${id}. ${type} ${item.description}  ${item.boards?.join(',') || ''}`);
+      createNote(args) {
+        if (!args.length) return { error: true, msg: 'Error: note description required' };
+        const { boards, description } = this._parseOptions(args);
+        if (!description) return { error: true, msg: 'Error: empty description' };
+        const id = this._generateId();
+        const { timestamp, dateString } = this._nowMeta();
+        this.items[id] = {
+          id, description, boards, isStarred: false, _isTask: false,
+          _date: dateString, _timestamp: timestamp
+        };
+        this._save();
+        return { success: true, msg: `Created note [${id}]: ${description}` };
       }
-      return lines.join('\n');
-    }
 
-    findItems(terms) {
-      let lower = terms.map(t=>t.toLowerCase());
-      let result = {};
-      for (let [id, it] of Object.entries(this.items)) {
-        if (lower.some(term => it.description.toLowerCase().includes(term))) result[id]=it;
+      _validateIds(ids, source = 'items') {
+        const pool = source === 'items' ? this.items : this.archive;
+        let valid = [];
+        for (let raw of ids) {
+          let num = Number(raw);
+          if (isNaN(num) || !pool[num]) return { error: true, msg: `Invalid ID: ${raw} not found` };
+          valid.push(num);
+        }
+        return { valid };
       }
-      return result;
-    }
 
-    filterByAttributes(attrList) {
-      let filtered = { ...this.items };
-      for (let a of attrList) {
-        let low = a.toLowerCase();
-        if (['star','starred'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_,v])=>v.isStarred));
-        else if (['done','complete','checked'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_,v])=>v._isTask && v.isComplete));
-        else if (['progress','started'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_,v])=>v._isTask && v.inProgress && !v.isComplete));
-        else if (['pending','unchecked'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_,v])=>v._isTask && !v.isComplete && !v.inProgress));
-        else if (['task','tasks'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_,v])=>v._isTask));
-        else if (['note','notes'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_,v])=>!v._isTask));
+      checkTasks(idsRaw) {
+        let ids = idsRaw.map(String);
+        let v = this._validateIds(ids);
+        if (v.error) return v;
+        let checked = [], unchecked = [];
+        for (let id of v.valid) {
+          let it = this.items[id];
+          if (!it._isTask) return { error: true, msg: `Item ${id} is a note, cannot check/uncheck` };
+          it.isComplete = !it.isComplete;
+          if (it.isComplete) it.inProgress = false;
+          (it.isComplete ? checked : unchecked).push(id);
+        }
+        this._save();
+        let msg = '';
+        if (checked.length) msg += `Checked (complete): ${checked.join(', ')}. `;
+        if (unchecked.length) msg += `Unchecked (pending): ${unchecked.join(', ')}.`;
+        return { success: true, msg: msg || 'No tasks updated' };
       }
-      return filtered;
-    }
 
-    listByAttributesAndBoards(flags, boards) {
-      let filtered = this.filterByAttributes(flags);
-      if (boards.length) {
-        let boardSet = new Set(boards.map(b => b === 'myboard' ? 'My Board' : (b.startsWith('@') ? b : '@'+b)));
-        filtered = Object.fromEntries(Object.entries(filtered).filter(([_,v])=> v.boards.some(b => boardSet.has(b))));
+      beginTasks(idsRaw) {
+        let ids = idsRaw.map(String);
+        let v = this._validateIds(ids);
+        if (v.error) return v;
+        let started = [], paused = [];
+        for (let id of v.valid) {
+          let it = this.items[id];
+          if (!it._isTask) return { error: true, msg: `Item ${id} is a note, cannot start/pause` };
+          if (it.isComplete) return { error: true, msg: `Task ${id} is completed, cannot start` };
+          it.inProgress = !it.inProgress;
+          (it.inProgress ? started : paused).push(id);
+        }
+        this._save();
+        let msg = '';
+        if (started.length) msg += `Started: ${started.join(', ')}. `;
+        if (paused.length) msg += `Paused: ${paused.join(', ')}.`;
+        return { success: true, msg };
       }
-      return filtered;
-    }
 
-    _formatItemLine(item) {
-      let star = item.isStarred ? '*' : ' ';
-      let prefix = '';
-      if (item._isTask) {
-        if (item.isComplete) prefix = '✓';
-        else if (item.inProgress) prefix = '▶';
-        else prefix = '○';
-      } else {
-        prefix = '📄';
+      starItems(idsRaw) {
+        let ids = idsRaw.map(String);
+        let v = this._validateIds(ids);
+        if (v.error) return v;
+        let starred = [], unstarred = [];
+        for (let id of v.valid) {
+          this.items[id].isStarred = !this.items[id].isStarred;
+          (this.items[id].isStarred ? starred : unstarred).push(id);
+        }
+        this._save();
+        let msg = '';
+        if (starred.length) msg += `Starred: ${starred.join(', ')}. `;
+        if (unstarred.length) msg += `Unstarred: ${unstarred.join(', ')}.`;
+        return { success: true, msg };
       }
-      let prio = '';
-      if (item._isTask && !item.isComplete && item.priority === 3) prio = ' [!]';
-      else if (item._isTask && !item.isComplete && item.priority === 2) prio = ' [!]';
-      let boardsStr = item.boards.filter(b=>b!=='My Board').map(b=>`[${b}]`).join('');
-      let age = this._getAge(item._timestamp);
-      let ageStr = age ? ` (${age}d)` : '';
-      return `  ${star} ${prefix} ${item.id}. ${item.description}${prio} ${boardsStr}${ageStr}`.trim();
+
+      deleteItems(idsRaw) {
+        let ids = idsRaw.map(String);
+        let v = this._validateIds(ids);
+        if (v.error) return v;
+        let moved = [];
+        for (let id of v.valid) {
+          let item = this.items[id];
+          let archiveId = this._nextArchiveId();
+          this.archive[archiveId] = JSON.parse(JSON.stringify(item));
+          delete this.items[id];
+          moved.push(id);
+        }
+        this._save();
+        return { success: true, msg: `Deleted and archived: ${moved.join(', ')}` };
+      }
+
+      _nextArchiveId() {
+        let ids = Object.keys(this.archive).map(Number);
+        let max = ids.length ? Math.max(...ids) : 0;
+        return max + 1;
+      }
+
+      restoreItems(idsRaw) {
+        let ids = idsRaw.map(String);
+        let v = this._validateIds(ids, 'archive');
+        if (v.error) return v;
+        let restored = [];
+        for (let oldId of v.valid) {
+          let archived = this.archive[oldId];
+          if (!archived) continue;
+          let newId = this._generateId();
+          let newItem = { ...archived, id: newId };
+          this.items[newId] = newItem;
+          delete this.archive[oldId];
+          restored.push(`${oldId} -> new ID ${newId}`);
+        }
+        this._save();
+        return { success: true, msg: `Restored: ${restored.join(', ')}` };
+      }
+
+      editItem(idRaw, newDesc) {
+        let id = Number(idRaw);
+        if (!this.items[id]) return { error: true, msg: `ID ${id} not found` };
+        if (!newDesc || !newDesc.trim()) return { error: true, msg: 'Description required' };
+        this.items[id].description = newDesc.trim();
+        this._save();
+        return { success: true, msg: `Updated item ${id}: "${newDesc.trim()}"` };
+      }
+
+      moveBoards(idRaw, targetBoards) {
+        let id = Number(idRaw);
+        if (!this.items[id]) return { error: true, msg: `ID ${id} not found` };
+        let boards = [];
+        for (let b of targetBoards) {
+          if (b.toLowerCase() === 'inbox') boards.push('inbox');
+          else if (b.startsWith('@')) boards.push(b);
+          else boards.push('@' + b);
+        }
+        if (!boards.length) boards.push('inbox');
+        this.items[id].boards = [...new Set(boards)];
+        this._save();
+        return { success: true, msg: `Moved item ${id} to boards: ${boards.join(', ')}` };
+      }
+
+      updatePriority(idRaw, levelRaw) {
+        let id = Number(idRaw);
+        let level = Number(levelRaw);
+        if (!this.items[id]) return { error: true, msg: `ID ${id} not found` };
+        if (![1, 2, 3].includes(level)) return { error: true, msg: 'Priority must be 1,2,3' };
+        if (!this.items[id]._isTask) return { error: true, msg: 'Only tasks have priority' };
+        this.items[id].priority = level;
+        this._save();
+        let prio = level === 3 ? 'HIGH' : (level === 2 ? 'MEDIUM' : 'NORMAL');
+        return { success: true, msg: `Priority of task ${id} set to ${prio}` };
+      }
+
+      clearCompleted() {
+        let toDelete = [];
+        for (let [id, it] of Object.entries(this.items)) {
+          if (it._isTask && it.isComplete) toDelete.push(Number(id));
+        }
+        if (!toDelete.length) return { success: true, msg: 'No completed tasks to clear' };
+        return this.deleteItems(toDelete);
+      }
+
+      copyToClipboard(idsRaw, copyFn) {
+        let ids = idsRaw.map(String);
+        let v = this._validateIds(ids);
+        if (v.error) return v;
+        let descriptions = v.valid.map(id => this.items[id].description).join('\n');
+        copyFn(descriptions);
+        return { success: true, msg: `Copied ${ids.length} item(s) description` };
+      }
+
+      // board view – plain ascii
+      getBoardView() {
+        let groups = this._groupByBoard();
+        let lines = [];
+        let stats = this._computeStats();
+
+        for (let [board, items] of Object.entries(groups)) {
+          if (items.length === 0) continue;
+          let taskCount = items.filter(i => i._isTask).length;
+          let completeCount = items.filter(i => i._isTask && i.isComplete).length;
+
+          let boardName = board === 'inbox' ? '@inbox' : board;
+          lines.push(`\n<span class="board-header">${boardName}</span> <span class="c-dim">[${completeCount}/${taskCount}]</span>`);
+
+          for (let it of items) {
+            lines.push(this._formatItemLine(it));
+          }
+        }
+
+        // The formatted 2-line stats footer
+        lines.push(`\n<span class="c-dim">${stats.percent}% of all tasks complete.</span>`);
+        lines.push(`<span class="c-green">${stats.complete}</span> <span class="c-dim">done ·</span> <span class="c-purple">${stats.pending}</span> <span class="c-dim">pending ·</span> <span class="c-blue">${stats.notes}</span> <span class="c-dim">notes</span>`);
+
+        return lines.join('\n');
+      }
+
+      getTimelineView() {
+        let groups = this._groupByDate();
+        let lines = ['TIMELINE (by creation date)'];
+        for (let [date, items] of Object.entries(groups).sort((a, b) => new Date(a[0]) - new Date(b[0]))) {
+          lines.push(`\n${date}`);
+          for (let it of items) lines.push(this._formatItemLine(it));
+        }
+        return lines.join('\n');
+      }
+
+      getArchiveView() {
+        if (Object.keys(this.archive).length === 0) return 'Archive is empty.';
+        let lines = ['ARCHIVED ITEMS'];
+        for (let [id, item] of Object.entries(this.archive)) {
+          let type = item._isTask ? (item.isComplete ? '[done]' : '[task]') : '[note]';
+          lines.push(` ${id}. ${type} ${item.description}  ${item.boards?.join(',') || ''}`);
+        }
+        return lines.join('\n');
+      }
+
+      findItems(terms) {
+        let lower = terms.map(t => t.toLowerCase());
+        let result = {};
+        for (let [id, it] of Object.entries(this.items)) {
+          if (lower.some(term => it.description.toLowerCase().includes(term))) result[id] = it;
+        }
+        return result;
+      }
+
+      filterByAttributes(attrList) {
+        let filtered = { ...this.items };
+        for (let a of attrList) {
+          let low = a.toLowerCase();
+          if (['star', 'starred'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_, v]) => v.isStarred));
+          else if (['done', 'complete', 'checked'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_, v]) => v._isTask && v.isComplete));
+          else if (['progress', 'started'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_, v]) => v._isTask && v.inProgress && !v.isComplete));
+          else if (['pending', 'unchecked'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_, v]) => v._isTask && !v.isComplete && !v.inProgress));
+          else if (['task', 'tasks'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_, v]) => v._isTask));
+          else if (['note', 'notes'].includes(low)) filtered = Object.fromEntries(Object.entries(filtered).filter(([_, v]) => !v._isTask));
+        }
+        return filtered;
+      }
+
+      listByAttributesAndBoards(flags, boards) {
+        let filtered = this.filterByAttributes(flags);
+        if (boards.length) {
+          let boardSet = new Set(boards.map(b => b === 'inbox' ? 'inbox' : (b.startsWith('@') ? b : '@' + b)));
+          filtered = Object.fromEntries(Object.entries(filtered).filter(([_, v]) => v.boards.some(b => boardSet.has(b))));
+        }
+        return filtered;
+      }
+
+      _formatItemLine(item) {
+        let star = item.isStarred ? '<span class="c-yellow">★</span>' : '';
+        let prefix = '';
+        let desc = item.description;
+
+        // Status mapping and dimming
+        if (item._isTask) {
+          if (item.isComplete) {
+            prefix = '<span class="c-green">✓</span>';
+            desc = `<span class="c-dim">${desc}</span>`; // Dim completed tasks
+          } else if (item.inProgress) {
+            prefix = '<span class="c-blue">•</span>';
+          } else {
+            prefix = '<span class="c-purple">☐</span>';
+          }
+        } else {
+          prefix = '<span class="c-blue">•</span>'; // Standard bullet for notes
+          desc = `<span class="c-dim">${desc}</span>`;
+        }
+
+        let prio = '';
+        if (item._isTask && !item.isComplete && item.priority === 3) prio = ' <span class="c-yellow">(!)</span>';
+        else if (item._isTask && !item.isComplete && item.priority === 2) prio = ' <span class="c-yellow">(!)</span>';
+
+        let boardsStr = item.boards.filter(b => b !== 'inbox').map(b => ` <span class="c-dim">[${b}]</span>`).join('');
+        let age = this._getAge(item._timestamp);
+        let ageStr = age ? ` <span class="c-dim">${age}d</span>` : '';
+
+        // Match the visual order: ID. Checkbox Description Age Star
+        return `  <span class="c-dim">${item.id}.</span> ${prefix} ${desc}${prio}${boardsStr}${ageStr} ${star}`.trimEnd();
+      }
+
+      _getAge(ts) {
+        let days = Math.floor((Date.now() - ts) / 86400000);
+        if (days === 0) return '';
+        return days;
+      }
+
+      _groupByBoard() {
+        let boardsSet = new Set(['inbox']);
+        Object.values(this.items).forEach(it => it.boards.forEach(b => boardsSet.add(b)));
+        let groups = {};
+        for (let b of boardsSet) groups[b] = [];
+        Object.values(this.items).forEach(it => {
+          it.boards.forEach(b => { if (groups[b]) groups[b].push(it); });
+        });
+        for (let b in groups) groups[b].sort((a, b) => a.id - b.id);
+        return groups;
+      }
+
+      _groupByDate() {
+        let groups = {};
+        Object.values(this.items).forEach(it => {
+          let d = it._date;
+          if (!groups[d]) groups[d] = [];
+          groups[d].push(it);
+        });
+        for (let d in groups) groups[d].sort((a, b) => a.id - b.id);
+        return groups;
+      }
+
+      _computeStats() {
+        let complete = 0, inProgress = 0, pending = 0, notes = 0;
+        Object.values(this.items).forEach(it => {
+          if (it._isTask) {
+            if (it.isComplete) complete++;
+            else if (it.inProgress) inProgress++;
+            else pending++;
+          } else notes++;
+        });
+        let total = complete + inProgress + pending;
+        let percent = total === 0 ? 0 : Math.floor(complete * 100 / total);
+        return { percent, complete, inProgress, pending, notes };
+      }
     }
 
-    _getAge(ts) {
-      let days = Math.floor((Date.now() - ts) / 86400000);
-      if (days === 0) return '';
-      return days;
+    // ------------------------- TERMINAL UI -------------------------
+    const tb = new Core();
+    const outputDiv = document.getElementById('output');
+    const cmdInput = document.getElementById('cmd-input');
+
+    function renderPlainText(text) {
+      let div = document.createElement('div');
+      div.className = 'response-text';
+      div.innerHTML = text; // Changed to innerHTML to parse styling
+      return div;
     }
 
-    _groupByBoard() {
-      let boardsSet = new Set(['My Board']);
-      Object.values(this.items).forEach(it => it.boards.forEach(b => boardsSet.add(b)));
-      let groups = {};
-      for (let b of boardsSet) groups[b] = [];
-      Object.values(this.items).forEach(it => {
-        it.boards.forEach(b => { if (groups[b]) groups[b].push(it); });
-      });
-      for (let b in groups) groups[b].sort((a,b)=>a.id-b.id);
-      return groups;
+    function addUserCommand(cmd) {
+      let userDiv = document.createElement('div');
+      userDiv.className = 'user-cmd-line';
+      userDiv.innerText = `$ ${cmd}`;
+      outputDiv.appendChild(userDiv);
     }
 
-    _groupByDate() {
-      let groups = {};
-      Object.values(this.items).forEach(it => {
-        let d = it._date;
-        if (!groups[d]) groups[d] = [];
-        groups[d].push(it);
-      });
-      for (let d in groups) groups[d].sort((a,b)=>a.id-b.id);
-      return groups;
+    function addResponse(msg) {
+      let resp = renderPlainText(msg);
+      outputDiv.appendChild(resp);
+      outputDiv.scrollTop = outputDiv.scrollHeight;
     }
 
-    _computeStats() {
-      let complete=0, inProgress=0, pending=0, notes=0;
-      Object.values(this.items).forEach(it=>{
-        if(it._isTask){
-          if(it.isComplete) complete++;
-          else if(it.inProgress) inProgress++;
-          else pending++;
-        } else notes++;
-      });
-      let total = complete+inProgress+pending;
-      let percent = total===0?0:Math.floor(complete*100/total);
-      return {percent,complete,inProgress,pending,notes};
-    }
-  }
-
-  // ------------------------- TERMINAL UI -------------------------
-  const tb = new TaskbookCore();
-  const outputDiv = document.getElementById('output');
-  const cmdInput = document.getElementById('cmd-input');
-
-  function renderPlainText(text) {
-    let div = document.createElement('div');
-    div.className = 'response-text';
-    div.innerText = text;
-    return div;
-  }
-
-  function addUserCommand(cmd) {
-    let userDiv = document.createElement('div');
-    userDiv.className = 'user-cmd-line';
-    userDiv.innerText = `$ ${cmd}`;
-    outputDiv.appendChild(userDiv);
-  }
-
-  function addResponse(msg) {
-    let resp = renderPlainText(msg);
-    outputDiv.appendChild(resp);
-    outputDiv.scrollTop = outputDiv.scrollHeight;
-  }
-
-  async function handleCommand(raw) {
-    if (!raw.trim()) {
-      addResponse(tb.getBoardView());
-      return;
-    }
-    let args = raw.trim().split(/\s+/);
-    let main = args[0];
-    // shortcuts / aliases
-    if (main === 'help' || main === '-h' || main === '--help') {
-      addResponse(
-`Usage: tb [command] [options]
+    async function handleCommand(raw) {
+      if (!raw.trim()) {
+        addResponse(tb.getBoardView());
+        return;
+      }
+      let args = raw.trim().split(/\s+/);
+      let main = args[0];
+      // shortcuts / aliases
+      if (main === 'help' || main === '-h' || main === '--help') {
+        addResponse(
+          `Usage: [command] [options]
   task / -t / add      : create task  -> task @board p:2 description
   note / -n            : create note  -> note @board description
   list / -l            : list items (optional: @board, star, done, pending, task, note)
@@ -517,147 +567,154 @@
   find <keywords>      : search
   copy <ids>           : copy descriptions
   board                : show dashboard (default)`
-      );
-      return;
-    }
-    if (main === 'board' || main === '') {
+        );
+        return;
+      }
+      if (main === 'board' || main === '') {
+        addResponse(tb.getBoardView());
+        return;
+      }
+      // task creation
+      if (main === 'task' || main === '-t' || main === 'add') {
+        let res = tb.createTask(args.slice(1));
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'note' || main === '-n') {
+        let res = tb.createNote(args.slice(1));
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'list' || main === '-l') {
+        let flags = [], boards = [];
+        for (let i = 1; i < args.length; i++) {
+          let tok = args[i];
+          if (tok.startsWith('@') || tok.toLowerCase() === 'inbox') boards.push(tok);
+          else flags.push(tok);
+        }
+        let filtered = tb.listByAttributesAndBoards(flags, boards);
+        if (Object.keys(filtered).length === 0) addResponse('No items match.');
+        else {
+          let lines = [];
+          for (let it of Object.values(filtered).sort((a, b) => a.id - b.id)) lines.push(tb._formatItemLine(it));
+          addResponse(lines.join('\n'));
+        }
+        return;
+      }
+      if (main === 'check' || main === '-c') {
+        if (args.length < 2) { addResponse('Usage: check <id1 id2 ...>'); return; }
+        let res = tb.checkTasks(args.slice(1));
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'begin' || main === '-b') {
+        if (args.length < 2) { addResponse('Usage: begin <ids>'); return; }
+        let res = tb.beginTasks(args.slice(1));
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'star' || main === '-s') {
+        if (args.length < 2) { addResponse('Usage: star <ids>'); return; }
+        let res = tb.starItems(args.slice(1));
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'delete' || main === '-d') {
+        if (args.length < 2) { addResponse('Usage: delete <ids>'); return; }
+        let res = tb.deleteItems(args.slice(1));
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'clear') {
+        let res = tb.clearCompleted();
+        addResponse(res.msg);
+        return;
+      }
+      if (main === 'edit' || main === '-e') {
+        let idFlag = args[1];
+        if (!idFlag || !idFlag.startsWith('@')) { addResponse('edit @id new description'); return; }
+        let idNum = idFlag.slice(1);
+        let newDesc = args.slice(2).join(' ');
+        let res = tb.editItem(idNum, newDesc);
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'move' || main === '-m') {
+        let idFlag = args[1];
+        if (!idFlag || !idFlag.startsWith('@')) { addResponse('move @id @board1 @board2'); return; }
+        let idNum = idFlag.slice(1);
+        let boards = args.slice(2);
+        let res = tb.moveBoards(idNum, boards);
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'priority' || main === '-p') {
+        let idFlag = args[1];
+        let level = args[2];
+        if (!idFlag || !idFlag.startsWith('@') || !level) { addResponse('priority @id 1|2|3'); return; }
+        let res = tb.updatePriority(idFlag.slice(1), level);
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'archive' || main === '-a') {
+        addResponse(tb.getArchiveView());
+        return;
+      }
+      if (main === 'restore' || main === '-r') {
+        if (args.length < 2) { addResponse('restore <ids>'); return; }
+        let res = tb.restoreItems(args.slice(1));
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      if (main === 'timeline' || main === '-i') {
+        addResponse(tb.getTimelineView());
+        return;
+      }
+      if (main === 'find' || main === '-f') {
+        if (args.length < 2) { addResponse('find <keyword>'); return; }
+        let matches = tb.findItems(args.slice(1));
+        if (Object.keys(matches).length === 0) addResponse('No matches.');
+        else {
+          let lines = [];
+          for (let it of Object.values(matches).sort((a, b) => a.id - b.id)) lines.push(tb._formatItemLine(it));
+          addResponse(lines.join('\n'));
+        }
+        return;
+      }
+      if (main === 'copy' || main === '-y') {
+        if (args.length < 2) { addResponse('copy <ids>'); return; }
+        let res = tb.copyToClipboard(args.slice(1), (txt) => navigator.clipboard.writeText(txt));
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
+      // fallback -> board view
       addResponse(tb.getBoardView());
-      return;
     }
-    // task creation
-    if (main === 'task' || main === '-t' || main === 'add') {
-      let res = tb.createTask(args.slice(1));
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'note' || main === '-n') {
-      let res = tb.createNote(args.slice(1));
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'list' || main === '-l') {
-      let flags = [], boards = [];
-      for (let i=1;i<args.length;i++) {
-        let tok = args[i];
-        if (tok.startsWith('@') || tok.toLowerCase() === 'myboard') boards.push(tok);
-        else flags.push(tok);
-      }
-      let filtered = tb.listByAttributesAndBoards(flags, boards);
-      if (Object.keys(filtered).length === 0) addResponse('No items match.');
-      else {
-        let lines = [];
-        for (let it of Object.values(filtered).sort((a,b)=>a.id-b.id)) lines.push(tb._formatItemLine(it));
-        addResponse(lines.join('\n'));
-      }
-      return;
-    }
-    if (main === 'check' || main === '-c') {
-      if (args.length < 2) { addResponse('Usage: check <id1 id2 ...>'); return; }
-      let res = tb.checkTasks(args.slice(1));
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'begin' || main === '-b') {
-      if (args.length < 2) { addResponse('Usage: begin <ids>'); return; }
-      let res = tb.beginTasks(args.slice(1));
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'star' || main === '-s') {
-      if (args.length < 2) { addResponse('Usage: star <ids>'); return; }
-      let res = tb.starItems(args.slice(1));
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'delete' || main === '-d') {
-      if (args.length < 2) { addResponse('Usage: delete <ids>'); return; }
-      let res = tb.deleteItems(args.slice(1));
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'clear') {
-      let res = tb.clearCompleted();
-      addResponse(res.msg);
-      return;
-    }
-    if (main === 'edit' || main === '-e') {
-      let idFlag = args[1];
-      if (!idFlag || !idFlag.startsWith('@')) { addResponse('edit @id new description'); return; }
-      let idNum = idFlag.slice(1);
-      let newDesc = args.slice(2).join(' ');
-      let res = tb.editItem(idNum, newDesc);
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'move' || main === '-m') {
-      let idFlag = args[1];
-      if (!idFlag || !idFlag.startsWith('@')) { addResponse('move @id @board1 @board2'); return; }
-      let idNum = idFlag.slice(1);
-      let boards = args.slice(2);
-      let res = tb.moveBoards(idNum, boards);
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'priority' || main === '-p') {
-      let idFlag = args[1];
-      let level = args[2];
-      if (!idFlag || !idFlag.startsWith('@') || !level) { addResponse('priority @id 1|2|3'); return; }
-      let res = tb.updatePriority(idFlag.slice(1), level);
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'archive' || main === '-a') {
-      addResponse(tb.getArchiveView());
-      return;
-    }
-    if (main === 'restore' || main === '-r') {
-      if (args.length < 2) { addResponse('restore <ids>'); return; }
-      let res = tb.restoreItems(args.slice(1));
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    if (main === 'timeline' || main === '-i') {
-      addResponse(tb.getTimelineView());
-      return;
-    }
-    if (main === 'find' || main === '-f') {
-      if (args.length < 2) { addResponse('find <keyword>'); return; }
-      let matches = tb.findItems(args.slice(1));
-      if (Object.keys(matches).length === 0) addResponse('No matches.');
-      else {
-        let lines = [];
-        for (let it of Object.values(matches).sort((a,b)=>a.id-b.id)) lines.push(tb._formatItemLine(it));
-        addResponse(lines.join('\n'));
-      }
-      return;
-    }
-    if (main === 'copy' || main === '-y') {
-      if (args.length < 2) { addResponse('copy <ids>'); return; }
-      let res = tb.copyToClipboard(args.slice(1), (txt) => navigator.clipboard.writeText(txt));
-      addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-      return;
-    }
-    // fallback -> board view
-    addResponse(tb.getBoardView());
-  }
 
-  cmdInput.addEventListener('keydown', async (e) => {
-    if (e.key === 'Enter') {
-      let raw = cmdInput.value.trim();
-      if (!raw) return;
-      addUserCommand(raw);
-      cmdInput.value = '';
-      await handleCommand(raw);
-      outputDiv.scrollTop = outputDiv.scrollHeight;
-    }
-  });
+    cmdInput.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        let raw = cmdInput.value.trim();
 
-  // initial welcome + board
-  function init() {
-    addResponse('Type "help" for commands.\n');
-    cmdInput.focus();
-  }
-  init();
-</script>
+        // 🧹 Flush the screen on every enter
+        outputDiv.innerHTML = '';
+
+        // 💬 Only append the user command line if they actually typed something
+        if (raw) {
+          addUserCommand(raw);
+        }
+
+        cmdInput.value = '';
+        await handleCommand(raw);
+        outputDiv.scrollTop = outputDiv.scrollHeight;
+      }
+    });
+
+    function init() {
+      addResponse(tb.getBoardView());
+      cmdInput.focus();
+    }
+    init();
+  </script>
 </body>
+
 </html>
