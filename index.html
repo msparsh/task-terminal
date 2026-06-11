@@ -150,10 +150,10 @@
       _load() {
         // 📥 Load synchronously from the file system
         const data = window.api.loadDataSync();
-        
+
         this.items = data.items || {};
         this.archive = data.archive || {};
-        
+
         if (Object.keys(this.items).length === 0) this._nextId = 1;
         else this._nextId = Math.max(...Object.keys(this.items).map(Number), 0) + 1;
       }
@@ -561,17 +561,8 @@
       outputDiv.scrollTop = outputDiv.scrollHeight;
     }
 
-    async function handleCommand(raw) {
-      if (!raw.trim()) {
-        addResponse(tb.getBoardView());
-        return;
-      }
-      let args = raw.trim().split(/\s+/);
-      let main = args[0];
-      // shortcuts / aliases
-      if (main === 'help' || main === '-h' || main === '--help') {
-        addResponse(
-          `Usage: [command] [options]
+
+    const HELP_MENU = `Usage: [command] [options]
   task / -t / add      : create task  -> task @board p:2 description
   note / -n            : create note  -> note @board description
   list / -l            : list items (optional: @board, star, done, pending, task, note)
@@ -588,8 +579,19 @@
   timeline / -i        : show timeline
   find <keywords>      : search
   copy <ids>           : copy descriptions
-  board                : show dashboard (default)`
-        );
+  board                : show dashboard (default)
+  help / -h            : show this menu`;
+
+    async function handleCommand(raw) {
+      if (!raw.trim()) {
+        addResponse(tb.getBoardView());
+        return;
+      }
+      let args = raw.trim().split(/\s+/);
+      let main = args[0];
+      // shortcuts / aliases
+      if (main === 'help' || main === '-h' || main === '--help') {
+        addResponse(HELP_MENU);
         return;
       }
       if (main === 'board' || main === '') {
@@ -710,7 +712,7 @@
         return;
       }
       // fallback -> board view
-      addResponse(tb.getBoardView());
+      addResponse(`Command not recognized: "${main}"\n\n${HELP_MENU}`);
     }
 
     cmdInput.addEventListener('keydown', async (e) => {
