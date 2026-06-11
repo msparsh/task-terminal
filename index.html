@@ -178,10 +178,12 @@
       _parseOptions(args) {
         let boards = [];
         let priority = 1;
+        let dueDate = null;
         let clean = [];
         for (let t of args) {
           if (t.startsWith('@') && t.length > 1) boards.push(t);
           else if (/^p:[123]$/i.test(t)) priority = parseInt(t[2], 10);
+          else if (/^due:\d{2}-\d{2}-\d{4}$/i.test(t)) dueDate = t.substring(4);
           else clean.push(t);
         }
         if (boards.length === 0) boards.push('inbox');
@@ -190,14 +192,14 @@
 
       createTask(args) {
         if (!args.length) return { error: true, msg: 'Error: task description required' };
-        const { boards, priority, description } = this._parseOptions(args);
+        const { boards, priority, dueDate, description } = this._parseOptions(args);
         if (!description) return { error: true, msg: 'Error: empty description' };
         const id = this._generateId();
         const { timestamp, dateString } = this._nowMeta();
         this.items[id] = {
           id, description, boards, priority, isStarred: false,
           isComplete: false, inProgress: false, _isTask: true,
-          _date: dateString, _timestamp: timestamp
+          _date: dateString, _timestamp: timestamp, _dueDate: dueDate
         };
         this._save();
         return { success: true, msg: `Created task [${id}]: ${description}` };
@@ -358,6 +360,20 @@
         return { success: true, msg: `Priority of task ${id} set to ${prio}` };
       }
 
+      updateDue(idRaw, dueDateRaw) {
+        let id = Number(idRaw);
+        if (!this.items[id]) return { error: true, msg: `ID ${id} not found` };
+        if (!this.items[id]._isTask) return { error: true, msg: 'Only tasks can have due dates' };
+
+        if (dueDateRaw !== 'none' && !/^\d{2}-\d{2}-\d{4}$/.test(dueDateRaw)) {
+          return { error: true, msg: 'Due date must be DD-MM-YYYY (or "none" to remove)' };
+        }
+
+        this.items[id]._dueDate = dueDateRaw === 'none' ? null : dueDateRaw;
+        this._save();
+        return { success: true, msg: `Due date for task ${id} set to ${this.items[id]._dueDate || 'none'}` };
+      }
+
       clearCompleted() {
         let toDelete = [];
         for (let [id, it] of Object.entries(this.items)) {
@@ -483,13 +499,24 @@
         else if (item._isTask && !item.isComplete && item.priority === 2) {
           prio = ' <span class="c-yellow">(!)</span>';
         }
+        let dueStr = '';
+        if (item._isTask && item._dueDate && !item.isComplete) {
+          let [d, m, y] = item._dueDate.split('-');
+          let dueTime = new Date(y, m - 1, d, 23, 59, 59).getTime(); // End of the due day
+          let isOverdue = Date.now() > dueTime;
 
-        let boardsStr = item.boards.filter(b => b !== 'inbox').map(b => ` <span class="c-dim">[${b}]</span>`).join('');
+          if (isOverdue) {
+            dueStr = ` <span class="c-red">[due: ${item._dueDate}]</span>`;
+          } else {
+            dueStr = ` <span class="c-dim">[due: ${item._dueDate}]</span>`;
+          }
+        }
+
         let age = this._getAge(item._timestamp);
         let ageStr = age ? ` <span class="c-dim">${age}d</span>` : '';
 
         // Match the visual order: ID. Checkbox Description Age Star ⭐
-        return `  <span class="c-dim">${item.id}.</span> ${prefix} ${desc}${prio}${boardsStr}${ageStr} ${star}`.trimEnd();
+        return `  <span class="c-dim">${item.id}.</span> ${prefix} ${desc}${prio}${dueStr}${ageStr} ${star}`.trimEnd();
       }
 
       _getAge(ts) {
@@ -566,19 +593,20 @@
   task / -t / add      : create task  -> task @board p:2 description
   note / -n            : create note  -> note @board description
   list / -l / ls       : list items (optional: @board, star, done, pending, task, note)
-  check / -c <ids>     : toggle complete
-  begin / -b <ids>     : start/pause task
-  star / -s <ids>      : toggle starred
-  delete / -d <ids>    : delete items (archive)
-  restore / -r <ids>   : restore from archive
-  edit @id <newdesc>   : edit description
+  check / -c &lt;ids&gt;     : toggle complete
+  begin / -b &lt;ids&gt;     : start/pause task
+  star / -s &lt;ids&gt;      : toggle starred
+  delete / -d &lt;ids&gt;    : delete items (archive)
+  restore / -r &lt;ids&gt;   : restore from archive
+  edit @id &lt;newdesc&gt;   : edit description
   move @id @board...   : move to boards
-  priority @id <1-3>   : set priority
+  priority @id &lt;1-3&gt;   : set priority
+  due @id &lt;DD-MM-YYYY&gt; : set due date (or "none")
   sweep                : remove completed tasks
   archive / -a         : show archive
   timeline / -i        : show timeline
-  find <keywords>      : search
-  copy <ids>           : copy descriptions
+  find &lt;keywords&gt;      : search
+  copy &lt;ids&gt;           : copy descriptions
   board                : show dashboard (default)
   help / -h            : show this menu`;
 
@@ -680,6 +708,17 @@
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
       }
+      if (main === 'due') {
+        let idFlag = args[1];
+        let dueDate = args[2];
+        if (!idFlag || !idFlag.startsWith('@') || !dueDate) {
+          addResponse('Usage: due @id DD-MM-YYYY (or "none" to remove)');
+          return;
+        }
+        let res = tb.updateDue(idFlag.slice(1), dueDate);
+        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        return;
+      }
       if (main === 'archive' || main === '-a') {
         addResponse(tb.getArchiveView());
         return;
@@ -712,7 +751,8 @@
         return;
       }
       // fallback -> board view
-      addResponse(`Command not recognized: "${main}"\n\n${HELP_MENU}`);
+      let safeMain = main.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      addResponse(`Command not recognized: "${safeMain}"\n\n${HELP_MENU}`);
     }
 
     cmdInput.addEventListener('keydown', async (e) => {
