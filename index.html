@@ -565,7 +565,7 @@
     const HELP_MENU = `Usage: [command] [options]
   task / -t / add      : create task  -> task @board p:2 description
   note / -n            : create note  -> note @board description
-  list / -l            : list items (optional: @board, star, done, pending, task, note)
+  list / -l / ls       : list items (optional: @board, star, done, pending, task, note)
   check / -c <ids>     : toggle complete
   begin / -b <ids>     : start/pause task
   star / -s <ids>      : toggle starred
@@ -609,7 +609,7 @@
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
       }
-      if (main === 'list' || main === '-l') {
+      if (main === 'list' || main === '-l' || main === 'ls') {
         let flags = [], boards = [];
         for (let i = 1; i < args.length; i++) {
           let tok = args[i];
