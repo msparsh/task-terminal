@@ -574,7 +574,7 @@
   edit @id <newdesc>   : edit description
   move @id @board...   : move to boards
   priority @id <1-3>   : set priority
-  clear                : remove completed tasks
+  sweep                : remove completed tasks
   archive / -a         : show archive
   timeline / -i        : show timeline
   find <keywords>      : search
@@ -649,7 +649,7 @@
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
       }
-      if (main === 'clear') {
+      if (main === 'sweep') {
         let res = tb.clearCompleted();
         addResponse(res.msg);
         return;
@@ -736,6 +736,7 @@
     function init() {
       addResponse(tb.getBoardView());
       cmdInput.focus();
+      document.getElementById('terminal').addEventListener('click', () => cmdInput.focus());
     }
     init();
   </script>
