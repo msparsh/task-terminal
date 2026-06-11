@@ -1,6 +1,6 @@
 const { app, BrowserWindow, nativeImage, ipcMain } = require('electron');
 const path = require('path');
-const fs = require('fs'); // 📁 Added fs
+const fs = require('fs');
 
 // 📂 Define the target path: Documents/Tasks/tasks.json
 const tasksDir = path.join(app.getPath('documents'), 'Tasks');
@@ -16,13 +16,13 @@ ipcMain.on('get-data', (event) => {
   if (fs.existsSync(tasksFile)) {
     event.returnValue = JSON.parse(fs.readFileSync(tasksFile, 'utf-8'));
   } else {
-    event.returnValue = { items: {}, archive: {} }; // Default empty state 📭
+    event.returnValue = { items: {}, archive: {} };
   }
 });
 
 ipcMain.on('save-data', (event, data) => {
-  fs.writeFileSync(tasksFile, JSON.stringify(data, null, 2)); 
-  event.returnValue = true; // ✅ Acknowledge save
+  fs.writeFileSync(tasksFile, JSON.stringify(data, null, 2));
+  event.returnValue = true;
 });
 
 function createWindow() {
@@ -35,13 +35,16 @@ function createWindow() {
     title: 'Task Terminal',
     icon: blankIcon,
     titleBarStyle: 'hidden',
-    titleBarOverlay: true,
-    backgroundColor: '#0a0e17',
+    titleBarOverlay: {
+      color: '#000000',
+      symbolColor: '#5c6370',
+      height: 32
+    },
+    backgroundColor: '#020202',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      // 🔗 Hooking up the preload script!
-      preload: path.join(__dirname, 'preload.js') 
+      preload: path.join(__dirname, 'preload.js')
     },
     show: false,
   });

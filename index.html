@@ -66,7 +66,6 @@
       padding: 4px 0;
     }
 
-    /* no emojis, plain text – keep everything ascii/plain */
     .response-text {
       color: #dadada;
       margin: 4px 0 8px 0;
@@ -78,7 +77,6 @@
       margin: 8px 0 2px 0;
     }
 
-    /* no rounded, no backgrounds, no shadows */
     ::-webkit-scrollbar {
       width: 8px;
       background: #111;
@@ -89,7 +87,6 @@
     }
 
 
-    /* taskbook syntax highlighting */
     .c-purple {
       color: #c678dd;
     }
@@ -143,12 +140,10 @@
     // --------------------------------------------------------------
     class Core {
       constructor() {
-        // 🗑️ Removed the old localStorage keys!
         this._load();
       }
 
       _load() {
-        // 📥 Load synchronously from the file system
         const data = window.api.loadDataSync();
 
         this.items = data.items || {};
@@ -159,7 +154,6 @@
       }
 
       _save() {
-        // 📤 Save everything to our JSON file at once!
         window.api.saveDataSync({
           items: this.items,
           archive: this.archive
@@ -392,7 +386,6 @@
         return { success: true, msg: `Copied ${ids.length} item(s) description` };
       }
 
-      // board view – plain ascii
       getBoardView() {
         let groups = this._groupByBoard();
         let lines = [];
@@ -411,7 +404,6 @@
           }
         }
 
-        // The formatted 2-line stats footer
         lines.push(`\n<span class="c-dim">${stats.percent}% of all tasks complete.</span>`);
         lines.push(`<span class="c-green">${stats.complete}</span> <span class="c-dim">done ·</span> <span class="c-purple">${stats.pending}</span> <span class="c-dim">pending ·</span> <span class="c-blue">${stats.notes}</span> <span class="c-dim">notes</span>`);
 
@@ -475,23 +467,21 @@
         let prefix = '';
         let desc = item.description;
 
-        // Status mapping and dimming 🚥
         if (item._isTask) {
           if (item.isComplete) {
             prefix = '<span class="c-green">✓</span>';
-            desc = `<span class="c-dim">${desc}</span>`; // Dim completed tasks
+            desc = `<span class="c-dim">${desc}</span>`;
           } else if (item.inProgress) {
             prefix = '<span class="c-blue">•</span>';
           } else {
             prefix = '<span class="c-purple">☐</span>';
           }
         } else {
-          prefix = '<span class="c-blue">•</span>'; // Standard bullet for notes
+          prefix = '<span class="c-blue">•</span>';
           desc = `<span class="c-dim">${desc}</span>`;
         }
 
         let prio = '';
-        // Add yellow underline to the description for Priority 3 🚨
         if (item._isTask && !item.isComplete && item.priority === 3) {
           desc = `<span class="c-yellow" style="text-decoration: underline">${desc}</span>`;
           prio = ' <span class="c-yellow">(!)</span>';
@@ -502,7 +492,7 @@
         let dueStr = '';
         if (item._isTask && item._dueDate && !item.isComplete) {
           let [d, m, y] = item._dueDate.split('-');
-          let dueTime = new Date(y, m - 1, d, 23, 59, 59).getTime(); // End of the due day
+          let dueTime = new Date(y, m - 1, d, 23, 59, 59).getTime();
           let isOverdue = Date.now() > dueTime;
 
           if (isOverdue) {
@@ -515,7 +505,6 @@
         let age = this._getAge(item._timestamp);
         let ageStr = age ? ` <span class="c-dim">${age}d</span>` : '';
 
-        // Match the visual order: ID. Checkbox Description Age Star ⭐
         return `  <span class="c-dim">${item.id}.</span> ${prefix} ${desc}${prio}${dueStr}${ageStr} ${star}`.trimEnd();
       }
 
@@ -571,7 +560,7 @@
     function renderPlainText(text) {
       let div = document.createElement('div');
       div.className = 'response-text';
-      div.innerHTML = text; // Changed to innerHTML to parse styling
+      div.innerHTML = text;
       return div;
     }
 
@@ -617,7 +606,6 @@
       }
       let args = raw.trim().split(/\s+/);
       let main = args[0];
-      // shortcuts / aliases
       if (main === 'help' || main === '-h' || main === '--help') {
         addResponse(HELP_MENU);
         return;
@@ -626,7 +614,6 @@
         addResponse(tb.getBoardView());
         return;
       }
-      // task creation
       if (main === 'task' || main === '-t' || main === 'add') {
         let res = tb.createTask(args.slice(1));
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
@@ -759,10 +746,8 @@
       if (e.key === 'Enter') {
         let raw = cmdInput.value.trim();
 
-        // 🧹 Flush the screen on every enter
         outputDiv.innerHTML = '';
 
-        // 💬 Only append the user command line if they actually typed something
         if (raw) {
           addUserCommand(raw);
         }
