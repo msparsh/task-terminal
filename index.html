@@ -744,22 +744,66 @@
       addResponse(`Command not recognized: "${safeMain}"\n\n${HELP_MENU}`);
     }
 
+    let cmdHistory = [];
+    let historyPos = 0;
+    let isNavigating = false;
+    const MAX_HISTORY = 100;
+
+    function addToHistory(cmd) {
+      if (!cmd.trim()) return;
+      if (cmdHistory[cmdHistory.length - 1] === cmd) return;
+      cmdHistory.push(cmd);
+      if (cmdHistory.length > MAX_HISTORY) cmdHistory.shift();
+    }
+
+    // Reset navigation position when user manually edits input
+    cmdInput.addEventListener('input', () => {
+      if (!isNavigating) {
+        historyPos = cmdHistory.length;
+      }
+    });
+
     cmdInput.addEventListener('keydown', async (e) => {
       if (e.key === 'Enter') {
         let raw = cmdInput.value.trim();
+        // Reset navigation flag
+        isNavigating = false;
 
         outputDiv.innerHTML = '';
-
         if (raw) {
           addUserCommand(raw);
+          addToHistory(raw);
+          historyPos = cmdHistory.length;
         }
-
         cmdInput.value = '';
         await handleCommand(raw);
         outputDiv.scrollTop = outputDiv.scrollHeight;
       }
+      else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        isNavigating = true;
+        if (historyPos > 0) {
+          historyPos--;
+          cmdInput.value = cmdHistory[historyPos];
+        }
+      }
+      else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        isNavigating = true;
+        if (historyPos < cmdHistory.length) {
+          historyPos++;
+          cmdInput.value = historyPos === cmdHistory.length ? '' : cmdHistory[historyPos];
+        } else {
+          // Already at bottom, clear input
+          cmdInput.value = '';
+        }
+      }
+      else {
+        // Any other key resets navigation flag after a short delay
+        // (so typing after navigation resets position)
+        setTimeout(() => { isNavigating = false; }, 0);
+      }
     });
-
     function init() {
       addResponse(tb.getBoardView());
       cmdInput.focus();
