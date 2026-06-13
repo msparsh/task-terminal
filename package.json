@@ -1,6 +1,6 @@
 {
   "name": "task-terminal",
-  "version": "1.0.5",
+  "version": "1.0.7",
   "description": "A dedicated pseudo-terminal for Taskbook",
   "main": "main.js",
   "scripts": {

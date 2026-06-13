@@ -694,10 +694,19 @@
     }
 
     function addResponse(msg) {
-      let resp = renderPlainText(msg);
-      outputDiv.appendChild(resp);
-      outputDiv.scrollTop = outputDiv.scrollHeight;
+      let div = document.createElement('div');
+      div.className = 'response-text';
+      div.textContent = msg;   // ✅ No HTML interpretation
+      outputDiv.appendChild(div);
     }
+
+    function addHtml(html) {
+      let div = document.createElement('div');
+      div.className = 'response-text';
+      div.innerHTML = html;    // Only for pre‑escaped, trusted HTML
+      outputDiv.appendChild(div);
+    }
+
 
 
 
@@ -725,7 +734,7 @@ help / -h / --help                                     : show this menu`;
 
     async function handleCommand(raw) {
       if (!raw.trim()) {
-        addResponse(tb.getBoardView());
+        addHtml(tb.getBoardView());
         return;
       }
       let args = raw.trim().split(/\s+/);
@@ -735,7 +744,7 @@ help / -h / --help                                     : show this menu`;
         return;
       }
       if (main === 'board' || main === '') {
-        addResponse(tb.getBoardView());
+        addHtml(tb.getBoardView());
         return;
       }
       if (main === 'task' || main === '-t' || main === 'add') {
@@ -764,7 +773,7 @@ help / -h / --help                                     : show this menu`;
           for (let it of rootItems.sort((a, b) => a.id - b.id)) {
             lines.push(tb._formatItemLine(it));
           }
-          addResponse(lines.join('\n'));
+          addHtml(lines.join('\n'));
         }
         return;
       }
@@ -876,7 +885,7 @@ help / -h / --help                                     : show this menu`;
         return;
       }
       if (main === 'archive' || main === '-a') {
-        addResponse(tb.getArchiveView());
+        addHtml(tb.getArchiveView());
         return;
       }
       if (main === 'restore' || main === '-r') {
@@ -886,7 +895,7 @@ help / -h / --help                                     : show this menu`;
         return;
       }
       if (main === 'timeline' || main === '-i') {
-        addResponse(tb.getTimelineView());
+        addHtml(tb.getTimelineView());
         return;
       }
       if (main === 'find' || main === '-f') {
@@ -896,7 +905,7 @@ help / -h / --help                                     : show this menu`;
         else {
           let lines = [];
           for (let it of Object.values(matches).sort((a, b) => a.id - b.id)) lines.push(tb._formatItemLine(it));
-          addResponse(lines.join('\n'));
+          addHtml(lines.join('\n'));
         }
         return;
       }
@@ -967,7 +976,7 @@ help / -h / --help                                     : show this menu`;
       }
     });
     function init() {
-      addResponse(tb.getBoardView());
+      addHtml(tb.getBoardView());
       cmdInput.focus();
       document.getElementById('terminal').addEventListener('click', () => cmdInput.focus());
     }
