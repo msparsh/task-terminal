@@ -88,6 +88,9 @@
       background: #333;
     }
 
+    .c-red {
+      color: #e06c75;
+    }
 
     .c-purple {
       color: #c678dd;
@@ -175,15 +178,16 @@
         let boards = [];
         let priority = 1;
         let dueDate = null;
-        let clean = [];
+        let descriptionWords = [];
         for (let t of args) {
           if (t.startsWith('@') && t.length > 1) boards.push(t);
           else if (/^p:[123]$/i.test(t)) priority = parseInt(t[2], 10);
           else if (/^due:\d{2}-\d{2}-\d{4}$/i.test(t)) dueDate = t.substring(4);
-          else clean.push(t);
+          else descriptionWords.push(t);
         }
         if (boards.length === 0) boards.push('inbox');
-        return { boards, priority, description: clean.join(' ').trim() };
+        let description = descriptionWords.join(' ').trim();
+        return { boards, priority, description, dueDate };
       }
 
       createTask(args) {
@@ -198,7 +202,7 @@
           _date: dateString, _timestamp: timestamp, _dueDate: dueDate
         };
         this._save();
-        return { success: true, msg: `Created task [${id}]: ${description}` };
+        return { success: true, msg: `Created task [${id}]: ${description}`, id };
       }
 
       createNote(args) {
@@ -285,17 +289,41 @@
         let v = this._validateIds(ids);
         if (v.error) return v;
         let moved = [];
+
+        // Function to collect all descendants
+        function getAllDescendants(itemId, allItems) {
+          let descendants = [];
+          for (let [id, item] of Object.entries(allItems)) {
+            if (item.parentId === itemId) {
+              descendants.push(Number(id));
+              descendants.push(...getAllDescendants(Number(id), allItems));
+            }
+          }
+          return descendants;
+        }
+
+        // Collect all IDs to delete (parents + all descendants)
+        let idsToDelete = new Set();
         for (let id of v.valid) {
+          if (!this.items[id]) continue; // already deleted as descendant
+          idsToDelete.add(id);
+          let descendants = getAllDescendants(id, this.items);
+          for (let d of descendants) idsToDelete.add(d);
+        }
+
+        // Archive and delete
+        for (let id of idsToDelete) {
           let item = this.items[id];
+          if (!item) continue;
           let archiveId = this._nextArchiveId();
           this.archive[archiveId] = JSON.parse(JSON.stringify(item));
           delete this.items[id];
           moved.push(id);
         }
-        this._save();
-        return { success: true, msg: `Deleted and archived: ${moved.join(', ')}` };
-      }
 
+        this._save();
+        return { success: true, msg: `Deleted and archived: ${Array.from(moved).join(', ')}` };
+      }
       _nextArchiveId() {
         let ids = Object.keys(this.archive).map(Number);
         let max = ids.length ? Math.max(...ids) : 0;
@@ -306,18 +334,29 @@
         let ids = idsRaw.map(String);
         let v = this._validateIds(ids, 'archive');
         if (v.error) return v;
-        let restored = [];
+
+        let map = {}, restores = [];
         for (let oldId of v.valid) {
           let archived = this.archive[oldId];
           if (!archived) continue;
           let newId = this._generateId();
-          let newItem = { ...archived, id: newId };
-          this.items[newId] = newItem;
+          restores.push({ newId, oldId, item: { ...archived, id: newId } });
+          map[oldId] = newId;
           delete this.archive[oldId];
-          restored.push(`${oldId} -> new ID ${newId}`);
         }
+
+        for (let { newId, item } of restores) {
+          if (item.parentId) {
+            let p = item.parentId;
+            if (map[p]) item.parentId = map[p];
+            else if (!this.items[p]) delete item.parentId;
+            // else keep original parentId (still active)
+          }
+          this.items[newId] = item;
+        }
+
         this._save();
-        return { success: true, msg: `Restored: ${restored.join(', ')}` };
+        return { success: true, msg: `Restored: ${restores.map(r => `${r.oldId}->${r.newId}`).join(', ')}` };
       }
 
       editItem(idRaw, newDesc) {
@@ -332,16 +371,81 @@
       moveBoards(idRaw, targetBoards) {
         let id = Number(idRaw);
         if (!this.items[id]) return { error: true, msg: `ID ${id} not found` };
+
         let boards = [];
         for (let b of targetBoards) {
-          if (b.toLowerCase() === 'inbox') boards.push('inbox');
-          else if (b.startsWith('@')) boards.push(b);
-          else boards.push('@' + b);
+          let clean = b.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+          if (clean === 'inbox') boards.push('inbox');
+          else if (clean) boards.push('@' + clean);
         }
         if (!boards.length) boards.push('inbox');
+
+        delete this.items[id].parentId; // 🔗 Unlink if it was a subtask!
         this.items[id].boards = [...new Set(boards)];
         this._save();
-        return { success: true, msg: `Moved item ${id} to boards: ${boards.join(', ')}` };
+        return { success: true, msg: `Moved [${id}] to boards: ${boards.join(', ')} (Unlinked)` };
+      }
+
+
+
+      // --- SUBTASK & HIERARCHY LOGIC --------------------------------
+
+      _wouldCreateCycle(currentId, targetParentId) {
+        let parent = this.items[targetParentId];
+        while (parent) {
+          if (parent.id === currentId) return true;
+          parent = parent.parentId ? this.items[parent.parentId] : null;
+        }
+        return false;
+      }
+
+      getLocation(idRaw) {
+        let id = Number(idRaw);
+        if (!this.items[id]) return { error: true, msg: `ID ${id} not found` };
+
+        let item = this.items[id];
+        let location = item.parentId ? `a subtask of @${item.parentId}` : `on board(s): ${item.boards.join(', ')}`;
+        return { success: true, msg: `Item [${id}] is currently ${location}` };
+      }
+
+      createSubtask(parentIdRaw, args) {
+        let parentId = Number(parentIdRaw);
+        if (!this.items[parentId]) return { error: true, msg: `Parent ID ${parentId} not found` };
+
+        // 1. Create the task (Parser now handles flags anywhere)
+        let result = this.createTask(args);
+        if (result.error) return result;
+
+        let newId = result.id;
+
+        // 2. Cycle detection
+        if (this._wouldCreateCycle(newId, parentId)) {
+          delete this.items[newId];
+          this._save();
+          return { error: true, msg: `Cannot create subtask - would create circular reference` };
+        }
+
+        // 3. Link and save
+        this.items[newId].parentId = parentId;
+        this._save();
+        return { success: true, msg: `Created subtask [${newId}] linked to parent [${parentId}]` };
+      }
+
+      reparentTask(subtaskIdRaw, newParentIdRaw) {
+        let subtaskId = Number(subtaskIdRaw);
+        let newParentId = Number(newParentIdRaw);
+
+        if (!this.items[subtaskId]) return { error: true, msg: `Subtask ID ${subtaskId} not found` };
+        if (!this.items[newParentId]) return { error: true, msg: `Parent ID ${newParentId} not found` };
+        if (subtaskId === newParentId) return { error: true, msg: `Cannot nest an item under itself` };
+
+        if (this._wouldCreateCycle(subtaskId, newParentId)) {
+          return { error: true, msg: `Cannot reparent - would create circular reference` };
+        }
+
+        this.items[subtaskId].parentId = newParentId;
+        this._save();
+        return { success: true, msg: `Nested [${subtaskId}] under [${newParentId}]` };
       }
 
       updatePriority(idRaw, levelRaw) {
@@ -379,15 +483,6 @@
         return this.deleteItems(toDelete);
       }
 
-      copyToClipboard(idsRaw, copyFn) {
-        let ids = idsRaw.map(String);
-        let v = this._validateIds(ids);
-        if (v.error) return v;
-        let descriptions = v.valid.map(id => this.items[id].description).join('\n');
-        copyFn(descriptions);
-        return { success: true, msg: `Copied ${ids.length} item(s) description` };
-      }
-
       getBoardView() {
         let groups = this._groupByBoard();
         let lines = [];
@@ -399,6 +494,7 @@
           let completeCount = items.filter(i => i._isTask && i.isComplete).length;
 
           let boardName = board === 'inbox' ? '@inbox' : board;
+          boardName = escapeHtml(boardName);   // FIX XSS
           lines.push(`\n<span class="board-header">${boardName}</span> <span class="c-dim">[${completeCount}/${taskCount}]</span>`);
 
           for (let it of items) {
@@ -427,7 +523,9 @@
         let lines = ['ARCHIVED ITEMS'];
         for (let [id, item] of Object.entries(this.archive)) {
           let type = item._isTask ? (item.isComplete ? '[done]' : '[task]') : '[note]';
-          lines.push(` ${id}. ${type} ${item.description}  ${item.boards?.join(',') || ''}`);
+          let desc = escapeHtml(item.description);
+          let boards = item.boards ? escapeHtml(item.boards.join(',')) : '';
+          lines.push(` ${id}. ${type} ${desc}  ${boards}`);
         }
         return lines.join('\n');
       }
@@ -464,10 +562,13 @@
         return filtered;
       }
 
-      _formatItemLine(item) {
+      _formatItemLine(item, indent = 0, parentBoards = null) {
         let star = item.isStarred ? '<span class="c-yellow">★</span>' : '';
         let prefix = '';
-        let desc = item.description;
+        let desc = escapeHtml(item.description);   // FIX XSS
+
+        // Inherit boards from parent for display purposes
+        let displayBoards = parentBoards || item.boards;
 
         if (item._isTask) {
           if (item.isComplete) {
@@ -491,25 +592,32 @@
         else if (item._isTask && !item.isComplete && item.priority === 2) {
           prio = ' <span class="c-yellow">(!)</span>';
         }
+
         let dueStr = '';
         if (item._isTask && item._dueDate && !item.isComplete) {
+          let dueDateEscaped = escapeHtml(item._dueDate);   // FIX XSS
           let [d, m, y] = item._dueDate.split('-');
           let dueTime = new Date(y, m - 1, d, 23, 59, 59).getTime();
           let isOverdue = Date.now() > dueTime;
-
-          if (isOverdue) {
-            dueStr = ` <span class="c-red">[due: ${item._dueDate}]</span>`;
-          } else {
-            dueStr = ` <span class="c-dim">[due: ${item._dueDate}]</span>`;
-          }
+          dueStr = isOverdue ? ` <span class="c-red">[due: ${dueDateEscaped}]</span>` : ` <span class="c-dim">[due: ${dueDateEscaped}]</span>`;
         }
 
         let age = this._getAge(item._timestamp);
         let ageStr = age ? ` <span class="c-dim">${age}d</span>` : '';
 
-        return `  <span class="c-dim">${item.id}.</span> ${prefix} ${desc}${prio}${dueStr}${ageStr} ${star}`.trimEnd();
-      }
+        let spacing = ' '.repeat(indent === 0 ? 2 : indent);
+        let mainLine = `${spacing}<span class="c-dim">${item.id}.</span> ${prefix} ${desc}${prio}${dueStr}${ageStr} ${star}`.trimEnd();
 
+        // Recursively render children (they inherit parent's boards)
+        let children = Object.values(this.items).filter(c => c.parentId === item.id);
+        if (children.length > 0) {
+          for (let child of children.sort((a, b) => a.id - b.id)) {
+            mainLine += '\n' + this._formatItemLine(child, indent === 0 ? 6 : indent + 4, displayBoards);
+          }
+        }
+
+        return mainLine;
+      }
       _getAge(ts) {
         let days = Math.floor((Date.now() - ts) / 86400000);
         if (days === 0) return '';
@@ -522,6 +630,7 @@
         let groups = {};
         for (let b of boardsSet) groups[b] = [];
         Object.values(this.items).forEach(it => {
+          if (it.parentId) return; // 🛑 ADD THIS LINE: Skip subtasks at the root level
           it.boards.forEach(b => { if (groups[b]) groups[b].push(it); });
         });
         for (let b in groups) groups[b].sort((a, b) => a.id - b.id);
@@ -531,6 +640,7 @@
       _groupByDate() {
         let groups = {};
         Object.values(this.items).forEach(it => {
+          if (it.parentId) return; // 🛑 ADD THIS LINE: Skip subtasks at the root level
           let d = it._date;
           if (!groups[d]) groups[d] = [];
           groups[d].push(it);
@@ -554,6 +664,16 @@
       }
     }
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>]/g, function (m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+      });
+    }
+
     // ------------------------- TERMINAL UI -------------------------
     const tb = new Core();
     const outputDiv = document.getElementById('output');
@@ -562,7 +682,7 @@
     function renderPlainText(text) {
       let div = document.createElement('div');
       div.className = 'response-text';
-      div.innerHTML = text;
+      div.innerHTML = text;   // trust the HTML – it's built safely
       return div;
     }
 
@@ -580,26 +700,28 @@
     }
 
 
-    const HELP_MENU = `Usage: [command] [options]
-  task / -t / add      : create task  -> task @board p:2 description
-  note / -n            : create note  -> note @board description
-  list / -l / ls       : list items (optional: @board, star, done, pending, task, note)
-  check / -c &lt;ids&gt;     : toggle complete
-  begin / -b &lt;ids&gt;     : start/pause task
-  star / -s &lt;ids&gt;      : toggle starred
-  delete / -d &lt;ids&gt;    : delete items (archive)
-  restore / -r &lt;ids&gt;   : restore from archive
-  edit @id &lt;newdesc&gt;   : edit description
-  move @id @board...   : move to boards
-  priority @id &lt;1-3&gt;   : set priority
-  due @id &lt;DD-MM-YYYY&gt; : set due date (or "none")
-  sweep                : remove completed tasks
-  archive / -a         : show archive
-  timeline / -i        : show timeline
-  find &lt;keywords&gt;      : search
-  copy &lt;ids&gt;           : copy descriptions
-  board                : show dashboard (default)
-  help / -h            : show this menu`;
+
+    const HELP_MENU = `task / -t / add description @board p:2                 : create task
+note / -n description @board                           : create note
+sub / subtask @id description                          : create subtask under parent
+list / ls / -l [@board] [flags]                        : list items (flags: star,done,progress,pending,task,note)
+board                                                  : dashboard view
+timeline / -i                                          : timeline by creation date
+archive / -a                                           : show archived items
+check / -c [id1 id2 ...]                               : toggle complete
+begin / -b [id1 id2 ...]                               : start/pause task
+star / -s [id1 id2 ...]                                : toggle starred
+delete / -d [id1 id2 ...]                              : delete & archive
+sweep                                                  : remove all completed tasks
+edit / -e @id new description                          : change description
+move / mv / -m @id @parent_id                          : nest under another task
+move / mv / -m @id @board1 @board2 ...                 : move to board(s) (unlinks)
+priority / -p @id 1|2|3                                : set priority (1 normal, 3 high)
+due @id DD-MM-YYYY | none                              : set or remove due date
+find / -f keyword                                      : search descriptions
+restore / -r [id1 id2 ...]                             : restore from archive
+help / -h / --help                                     : show this menu`;
+
 
     async function handleCommand(raw) {
       if (!raw.trim()) {
@@ -637,31 +759,35 @@
         if (Object.keys(filtered).length === 0) addResponse('No items match.');
         else {
           let lines = [];
-          for (let it of Object.values(filtered).sort((a, b) => a.id - b.id)) lines.push(tb._formatItemLine(it));
+          // Show only root items (no parentId) – children will be rendered recursively
+          let rootItems = Object.values(filtered).filter(it => !it.parentId);
+          for (let it of rootItems.sort((a, b) => a.id - b.id)) {
+            lines.push(tb._formatItemLine(it));
+          }
           addResponse(lines.join('\n'));
         }
         return;
       }
       if (main === 'check' || main === '-c') {
-        if (args.length < 2) { addResponse('Usage: check <id1 id2 ...>'); return; }
+        if (args.length < 2) { addResponse('Usage: check id1 id2 ...'); return; }
         let res = tb.checkTasks(args.slice(1));
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
       }
       if (main === 'begin' || main === '-b') {
-        if (args.length < 2) { addResponse('Usage: begin <ids>'); return; }
+        if (args.length < 2) { addResponse('Usage: begin ids'); return; }
         let res = tb.beginTasks(args.slice(1));
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
       }
       if (main === 'star' || main === '-s') {
-        if (args.length < 2) { addResponse('Usage: star <ids>'); return; }
+        if (args.length < 2) { addResponse('Usage: star ids'); return; }
         let res = tb.starItems(args.slice(1));
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
       }
       if (main === 'delete' || main === '-d') {
-        if (args.length < 2) { addResponse('Usage: delete <ids>'); return; }
+        if (args.length < 2) { addResponse('Usage: delete ids'); return; }
         let res = tb.deleteItems(args.slice(1));
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
@@ -680,15 +806,56 @@
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
       }
-      if (main === 'move' || main === '-m') {
+
+      if (main === 'move' || main === 'mv' || main === 'm') {
         let idFlag = args[1];
-        if (!idFlag || !idFlag.startsWith('@')) { addResponse('move @id @board1 @board2'); return; }
-        let idNum = idFlag.slice(1);
-        let boards = args.slice(2);
-        let res = tb.moveBoards(idNum, boards);
+        let targetFlag = args[2];
+
+        if (!idFlag || !idFlag.startsWith('@')) {
+          addResponse('Usage: mv @id @parent_id OR mv @id board1 board2 (unlinks)');
+          return;
+        }
+
+        let id = idFlag.slice(1);
+
+        // Scenario A: Query current location
+        if (!targetFlag) {
+          let res = tb.getLocation(id);
+          addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+          return;
+        }
+
+        // 🧠 SMART CHECK (Regex Edition): Is it strictly @ followed by only digits?
+        let isParentId = targetFlag.startsWith('@') &&
+          targetFlag.length > 1 &&
+          /^\d+$/.test(targetFlag.slice(1));
+
+        // Scenario B: Nesting under a parent (Reparent)
+        if (isParentId) {
+          let res = tb.reparentTask(id, targetFlag.slice(1));
+          addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        }
+        // Scenario C: Moving to boards (Unlink & Multi-Tag)
+        else {
+          let res = tb.moveBoards(id, [targetFlag, ...args.slice(3)]);
+          addResponse(res.error ? `Error: ${res.msg}` : res.msg);
+        }
+        return;
+      }
+
+      if (main === 'sub' || main === 'subtask') {
+        let idFlag = args[1];
+        if (!idFlag || !idFlag.startsWith('@')) {
+          addResponse('Usage: sub @id [options] description');
+          return;
+        }
+
+        let res = tb.createSubtask(idFlag.slice(1), args.slice(2));
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
       }
+
+
       if (main === 'priority' || main === '-p') {
         let idFlag = args[1];
         let level = args[2];
@@ -713,7 +880,7 @@
         return;
       }
       if (main === 'restore' || main === '-r') {
-        if (args.length < 2) { addResponse('restore <ids>'); return; }
+        if (args.length < 2) { addResponse('restore ids'); return; }
         let res = tb.restoreItems(args.slice(1));
         addResponse(res.error ? `Error: ${res.msg}` : res.msg);
         return;
@@ -723,7 +890,7 @@
         return;
       }
       if (main === 'find' || main === '-f') {
-        if (args.length < 2) { addResponse('find <keyword>'); return; }
+        if (args.length < 2) { addResponse('find keyword'); return; }
         let matches = tb.findItems(args.slice(1));
         if (Object.keys(matches).length === 0) addResponse('No matches.');
         else {
@@ -733,15 +900,10 @@
         }
         return;
       }
-      if (main === 'copy' || main === '-y') {
-        if (args.length < 2) { addResponse('copy <ids>'); return; }
-        let res = tb.copyToClipboard(args.slice(1), (txt) => navigator.clipboard.writeText(txt));
-        addResponse(res.error ? `Error: ${res.msg}` : res.msg);
-        return;
-      }
+
       // fallback -> board view
       let safeMain = main.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      addResponse(`Command not recognized: "${safeMain}"\n\n${HELP_MENU}`);
+      addResponse(`Command not recognized: "${escapeHtml(safeMain)}"\n\n${HELP_MENU}`);
     }
 
     let cmdHistory = [];
