@@ -1,5 +1,9 @@
 # Task Terminal
 
+<div align="center">
+  <img src="./preview.png" alt="Preview" width="75%"/>
+</div>
+
 Welcome to **Task Terminal**! 🚀 This is a dedicated pseudo-terminal desktop application designed to help you manage your tasks, notes, and boards using a distraction-free, command-line style interface. 📂🎯
 
 🙌 **Credits:** This project is fundamentally based on the fantastic [Taskbook](https://github.com/klaudiosinani/taskbook) project.  
