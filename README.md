@@ -29,4 +29,4 @@ npm run build
 
 ## 🚧 Project Status & Architecture 
 
-Please note that this is an actively evolving workspace! 🛠️🌀 The internal logic, UI layout, and storage mechanisms are subject to frequent changes and ongoing iteration. 🌱 Keep an eye out for updates as the project grows! ✨
+Please note that this is no longer maintained as I shifted developent to a flutter version. You are free to try it out or continue development.
