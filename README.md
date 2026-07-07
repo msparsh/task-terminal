@@ -1,5 +1,7 @@
 # Task Terminal
 
+Task Terminal is no longer maintained as I have shifted developent to a native [flutter version](https://github.com/msparsh/aeraa) with tags, subtasks, themes and much more. You are free to try both out and continue development on any.
+
 <div align="center">
   <img src="./preview.png" alt="Preview" width="99%"/>
 </div>
@@ -27,6 +29,3 @@ npm start
 npm run build
 ```
 
-## 🚧 Project Status & Architecture 
-
-Please note that this is no longer maintained as I shifted developent to a flutter version. You are free to try it out or continue development.
